@@ -127,6 +127,7 @@ class LocalizationVisualizer:
 
     def run(self):
         rate = rospy.Rate(100)
+        noise = 0
 
         particles = PointCloud()
         particles.header.stamp = self.EKF_time
@@ -140,8 +141,8 @@ class LocalizationVisualizer:
         while not self.latest_pose:
             rate.sleep()
 
-        x0 = np.array([self.latest_pose.position.x,
-                       self.latest_pose.position.y,
+        x0 = np.array([self.latest_pose.position.x ,
+                       self.latest_pose.position.y ,
                        get_yaw_from_quaternion(self.latest_pose.orientation)])
         self.EKF_time = self.latest_pose_time
         if self.params.mc:
@@ -173,8 +174,8 @@ class LocalizationVisualizer:
                 self.EKF_time, self.current_control = next_timestep, next_control
                 label = "EKF" if not self.params.mc else "MCL"
                 self.tfBroadcaster.sendTransform(create_transform_msg(
-                    (self.EKF.x[0], self.EKF.x[1], 0),
-                    tf.transformations.quaternion_from_euler(0, 0, self.EKF.x[2]),
+                    (np.squeeze(self.EKF.x)[0], np.squeeze(self.EKF.x)[1], 0),
+                    tf.transformations.quaternion_from_euler(0, 0, np.squeeze(self.EKF.x)[2]),
                     label, "world", self.EKF_time)
                 )
                 self.tfBroadcaster.sendTransform(create_transform_msg(
@@ -210,6 +211,11 @@ class LocalizationVisualizer:
 
             if self.params.mc:
                 particles.header.stamp = self.EKF_time
+                # if (noise == 10):
+                #     noise = 0
+                #     self.params.num_particles /= 2
+                # else:
+                #     noise += 1
                 for m in range(self.params.num_particles):
                     x = self.EKF.xs[m]
                     w = self.EKF.ws[m]
