@@ -5,7 +5,10 @@ import os
 # watch out on the order for the next two imports lol
 from tf import TransformListener
 try:
-    import tensorflow as tf
+    import tensorflow.compat.v1 as tf
+    tf.disable_v2_behavior()
+
+    # import tensorflow as tf
 except:
     pass
 import numpy as np
@@ -35,10 +38,10 @@ class DetectorParams:
 
         # Set to True to use tensorflow and a conv net.
         # False will use a very simple color thresholding to detect stop signs only.
-        self.use_tf = rospy.get_param("use_tf")
+        self.use_tf = rospy.get_param("use_tf", default=True)
 
         # Path to the trained conv net
-        model_path = rospy.get_param("~model_path", "../../tfmodels/stop_signs_gazebo.pb")
+        model_path = rospy.get_param("~model_path", "../../tfmodels/ssd_mobilenet_v1_coco.pb")
         label_path = rospy.get_param("~label_path", "../../tfmodels/coco_labels.txt")
         self.model_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), model_path)
         self.label_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), label_path)
@@ -135,7 +138,7 @@ class Detector:
         f_scores, f_boxes, f_classes = [], [], []
         f_num = 0
 
-        for i in range(num):
+        for i in range(num.astype('int')):
             if scores[i] >= self.params.min_score:
                 f_scores.append(scores[i])
                 f_boxes.append(boxes[i])
@@ -162,6 +165,12 @@ class Detector:
         x = 0.
         y = 0.
         z = 1.
+
+        fraction_xz = (u - self.cx) / self.fx
+        fraction_yz = (v - self.cy) / self.fy
+
+        combination = np.array([fraction_xz, fraction_yz, 1])
+        x, y, z = np.divide(combination, np.linalg.norm(combination))
         ########## Code ends here ##########
 
         return x, y, z
@@ -258,10 +267,10 @@ class Detector:
 
         ########## Code starts here ##########
         # TODO: Extract camera intrinsic parameters.
-        self.cx = 0.
-        self.cy = 0.
-        self.fx = 1.
-        self.fy = 1.
+        self.cx = msg.K[2]
+        self.cy = msg.K[5]
+        self.fx = msg.K[0]
+        self.fy = msg.K[4]
         ########## Code ends here ##########
 
     def laser_callback(self, msg):

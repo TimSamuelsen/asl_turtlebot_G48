@@ -1,7 +1,7 @@
 import numpy as np
 import rospy
 from utils import wrapToPi
-from std_msgs.msg import Float64
+from std_msgs.msg import Float64, Bool
 
 # command zero velocities once we are this close to the goal
 RHO_THRES = 0.05
@@ -11,6 +11,7 @@ DELTA_THRES = 0.1
 alpha_publisher = rospy.Publisher('/controller/alpha', Float64, queue_size=10)
 delta_publisher = rospy.Publisher('/controller/delta', Float64, queue_size=10)
 rho_publisher   = rospy.Publisher('/controller/rho', Float64, queue_size=10)
+keyboard_publisher = rospy.Publisher('/controller/keyboard', Bool, queue_size=1)
 
 class PoseController:
     """ Pose stabilization controller """

@@ -4,7 +4,7 @@
   <arg name="gmapping" default="true" /> 
   <arg name="rviz" default="" /> 
   <arg name="world" default="" /> 
-  <arg name="detector" default="" /> 
+  <arg name="detector" default="detector.py" /> 
   <arg name="navigator" default="" /> 
   <arg name="publish_state" default="true" /> 
   <arg name="x_pos" default="0.0" />
