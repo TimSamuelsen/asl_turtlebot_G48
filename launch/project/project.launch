@@ -4,7 +4,7 @@
   <rosparam param="use_tf" subst_value="true">$(arg use_tf)</rosparam>
 
   <include file="$(find asl_turtlebot)/launch/root.launch">
-    <arg name="world" value="grp48_proj" /> #grp48_proj
+    <arg name="world" value="grp48_proj_new" />
     <arg name="detector" value="detector.py"/>
     <arg name="x_pos" default="3.15"/>
     <arg name="y_pos" default="1.6"/>
