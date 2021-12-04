@@ -1,17 +1,10 @@
 import numpy as np
-import rospy
 from utils import wrapToPi
-from std_msgs.msg import Float64, Bool
 
 # command zero velocities once we are this close to the goal
 RHO_THRES = 0.05
 ALPHA_THRES = 0.1
 DELTA_THRES = 0.1
-
-alpha_publisher = rospy.Publisher('/controller/alpha', Float64, queue_size=10)
-delta_publisher = rospy.Publisher('/controller/delta', Float64, queue_size=10)
-rho_publisher   = rospy.Publisher('/controller/rho', Float64, queue_size=10)
-keyboard_publisher = rospy.Publisher('/controller/keyboard', Bool, queue_size=1)
 
 class PoseController:
     """ Pose stabilization controller """
@@ -28,7 +21,7 @@ class PoseController:
         self.x_g = x_g
         self.y_g = y_g
         self.th_g = th_g
-        
+
     def compute_control(self, x, y, th, t):
         """
         Inputs:
@@ -40,19 +33,21 @@ class PoseController:
         Hints: You'll need to use the wrapToPi function. The np.sinc function
         may also be useful, look up its documentation
         """
-
-        rho   = np.sqrt(np.power(self.x_g - x,2) + np.power(self.y_g - y,2))
-        alpha = wrapToPi(np.arctan2(self.y_g - y, self.x_g - x) - th)
-        delta = wrapToPi(np.arctan2(self.y_g - y, self.x_g - x) - self.th_g)
-        
-        alpha_publisher.publish(alpha)
-        delta_publisher.publish(delta)
-        rho_publisher.publish(rho)
-
         ########## Code starts here ##########
-        V = self.k1 * rho * np.cos(alpha)
-        om = self.k2 * alpha + self.k1 * np.cos(alpha) * np.sinc(alpha/np.pi) * (alpha + self.k3 * delta)
-        
+        #Calculate state coordinate:
+        rho = np.sqrt((self.x_g-x)**2 + (self.y_g-y)**2)
+        alpha = wrapToPi(np.arctan2((self.y_g-y),(self.x_g-x)) - th)
+        delta = wrapToPi(np.arctan2((self.y_g-y),(self.x_g-x)) - self.th_g)
+        if abs(alpha)<0.001:
+           alpha = np.sinc(alpha)
+        #Check if we are close to goal
+        if(rho<RHO_THRES and alpha<ALPHA_THRES and delta<DELTA_THRES):
+            V = 0
+            om = 0
+        else:
+            #Control law for V, om
+            V = self.k1*rho*np.cos(alpha)
+            om = self.k2*alpha + self.k1*np.sin(alpha)*np.cos(alpha)*(alpha+self.k3*delta)/alpha
         ########## Code ends here ##########
 
         # apply control limits

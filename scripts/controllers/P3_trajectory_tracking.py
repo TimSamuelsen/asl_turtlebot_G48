@@ -1,8 +1,7 @@
 import numpy as np
 from numpy import linalg
-
 V_PREV_THRES = 0.0001
-
+import pdb
 class TrajectoryTracker:
     """ Trajectory tracking controller using differential flatness """
     def __init__(self, kpx, kpy, kdx, kdy, V_max=0.5, om_max=1):
@@ -58,17 +57,20 @@ class TrajectoryTracker:
         x_d, xd_d, xdd_d, y_d, yd_d, ydd_d = self.get_desired_state(t)
 
         ########## Code starts here ##########
-        u1 = xdd_d + self.kpx * (x_d - x) + self.kdx * (xd_d - self.V_prev * np.cos(th))
-        u2 = ydd_d + self.kpy * (y_d - y) + self.kdy * (yd_d - self.V_prev * np.sin(th))
-
-        if dt > 0:
-            V = self.V_prev + (np.cos(th) * u1 + np.sin(th) * u2) * dt
-        else:
-            V = self.V_prev
-
-        V = np.maximum(V, V_PREV_THRES)
-        om = 1 / np.maximum(self.V_prev, V_PREV_THRES) * (-np.sin(th) * u1 + np.cos(th) * u2)
-
+        V = 0
+        om = 0
+        if self.V_prev == 0:
+            self.V_prev = np.sqrt(xd_d**2+yd_d**2)
+        u1 = xdd_d + self.kpx*(x_d-x) + self.kdx*(xd_d-self.V_prev*(np.cos(th)))
+        u2 = ydd_d + self.kpy*(y_d-y) + self.kdy*(yd_d-self.V_prev*(np.sin(th)))
+        A = np.array([[u1],[u2]])
+        J = np.array( [ [np.cos(th),-(self.V_prev)*np.sin(th)],[np.sin(th),(self.V_prev)*np.cos(th)] ] )  
+        X = np.linalg.solve(J,A)
+        #pdb.set_trace()    
+        V = self.V_prev + (dt)*X[0,0]
+        om = X[1,0]
+        if(V<V_PREV_THRES): 
+            V = self.V_prev   
         ########## Code ends here ##########
 
         # apply control limits
@@ -81,3 +83,4 @@ class TrajectoryTracker:
         self.om_prev = om
 
         return V, om
+

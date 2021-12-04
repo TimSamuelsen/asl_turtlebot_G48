@@ -8,15 +8,24 @@ from gazebo_msgs.msg import ModelStates
 from geometry_msgs.msg import Twist, PoseArray, Pose2D, PoseStamped
 from std_msgs.msg import Float32MultiArray, String
 import tf
+import numpy as np
+
+waypoints = np.array([[3.152, 1.600, np.pi/2],
+                      [3.419, 2.739, np.pi/2]])
+counter = 0
 
 class Mode(Enum):
     """State machine modes. Feel free to change."""
+    # IDLE = 1
+    # POSE = 2
+    # STOP = 3
+    # CROSS = 4
+    # NAV = 5
+    # MANUAL = 6
     IDLE = 1
-    POSE = 2
-    STOP = 3
-    CROSS = 4
-    NAV = 5
-    MANUAL = 6
+    NAVIGATE = 2
+
+
 
 
 class SupervisorParams:
@@ -41,6 +50,7 @@ class SupervisorParams:
 
         # Minimum distance from a stop sign to obey it
         self.stop_min_dist = rospy.get_param("~stop_min_dist", 0.5)
+        
 
         # Time taken to cross an intersection
         self.crossing_time = rospy.get_param("~crossing_time", 3.)
@@ -75,10 +85,14 @@ class Supervisor:
         self.mode = Mode.IDLE
         self.prev_mode = None  # For printing purposes
 
+        # obj positions
+        keys = ["fire_hydrant", "car", "potted_plant"]
+        self.obj_pos = dict.fromkeys(keys, None)
+
         ########## PUBLISHERS ##########
 
         # Command pose for controller
-        self.pose_goal_publisher = rospy.Publisher('/cmd_pose', Pose2D, queue_size=10)
+        self.pose_goal_publisher = rospy.Publisher('/cmd_nav', Pose2D, queue_size=10)
 
         # Command vel (used for idling)
         self.cmd_vel_publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
@@ -87,6 +101,11 @@ class Supervisor:
 
         # Stop sign detector
         rospy.Subscriber('/detector/stop_sign', DetectedObject, self.stop_sign_detected_callback)
+        ### Added subscribers for our objects (TIM)
+        rospy.Subscriber('/detector/car', DetectedObject, self.car_detected_callback)
+        rospy.Subscriber('/detector/fire_hydrant', DetectedObject, self.fire_hydrant_detected_callback)
+        rospy.Subscriber('/detector/potted_plant', DetectedObject, self.potted_plant_detected_callback)
+        ###
 
         # High-level navigation pose
         rospy.Subscriber('/nav_pose', Pose2D, self.nav_pose_callback)
@@ -154,6 +173,33 @@ class Supervisor:
         if dist > 0 and dist < self.params.stop_min_dist and self.mode == Mode.NAV:
             self.init_stop_sign()
 
+    ### Added callback functions for our object (TIM)
+    def fire_hydrant_detected_callback(self, msg):
+        # distance to object
+        dist = msg.distance
+        if dist > 0 and dist < self.params.stop_min_dist:
+            if self.mode == Mode.Explore:
+                self.save_obj_pos("fire_hydrant")
+            elif self.mode == Mode.Rescue:
+                self.stop_at_obj("fire_hydrant")
+    
+    def potted_plant_detected_callback(self, msg):
+       # distance to object
+        dist = msg.distance
+        if dist > 0 and dist < self.params.stop_min_dist:
+            if self.mode == Mode.Explore:
+                self.save_obj_pos("potted_plant"), 
+            elif self.mode == Mode.Rescue:
+                self.stop_at_obj("potted_plant")
+
+    def car_detected_callback(self, msg):
+        # distance to object
+        dist = msg.distance
+        if dist > 0 and dist < self.params.stop_min_dist:
+            if self.mode == Mode.Explore:
+                self.save_obj_pos("car")
+            elif self.mode == Mode.Rescue:
+                self.stop_at_obj("car")
 
     ########## STATE MACHINE ACTIONS ##########
 
@@ -200,6 +246,17 @@ class Supervisor:
         self.stop_sign_start = rospy.get_rostime()
         self.mode = Mode.STOP
 
+    def save_obj_pos(self, obj):
+        self.obj_pos[obj] = [self.x, self.y, self.theta]
+    
+    def stop_at_obj(self, obj):
+        self.stop_start = rospy.get_rostime()
+        self.mode = Mode.STOP
+        # TODO: Add something to save which object we stopped at
+
+
+    
+
     def has_stopped(self):
         """ checks if stop sign maneuver is over """
 
@@ -245,31 +302,22 @@ class Supervisor:
         ########## Code starts here ##########
         # TODO: Currently the state machine will just go to the pose without stopping
         #       at the stop sign.
+        global counter
 
         if self.mode == Mode.IDLE:
-            # Send zero velocity
-            self.stay_idle()
+            # Set the next goal point
+            if counter < np.shape(waypoints)[0]:
+                self.x_g,self.y_g,self.theta_g = waypoints[counter,:]
+                #Call nav_to_pose function
+                self.nav_to_pose()
+                #Switch sate to Navigate
+                self.mode = Mode.NAVIGATE
 
-        elif self.mode == Mode.POSE:
+        elif self.mode == Mode.NAVIGATE:
             # Moving towards a desired pose
             if self.close_to(self.x_g, self.y_g, self.theta_g):
                 self.mode = Mode.IDLE
-            else:
-                self.go_to_pose()
-
-        elif self.mode == Mode.STOP:
-            # At a stop sign
-            self.nav_to_pose()
-
-        elif self.mode == Mode.CROSS:
-            # Crossing an intersection
-            self.nav_to_pose()
-
-        elif self.mode == Mode.NAV:
-            if self.close_to(self.x_g, self.y_g, self.theta_g):
-                self.mode = Mode.IDLE
-            else:
-                self.nav_to_pose()
+                counter = counter + 1
 
         else:
             raise Exception("This mode is not supported: {}".format(str(self.mode)))
