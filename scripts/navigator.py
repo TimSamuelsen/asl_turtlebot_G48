@@ -10,8 +10,8 @@ from numpy import linalg
 from utils.utils import wrapToPi
 from utils.grids import StochOccupancyGrid2D
 from planners import AStar, compute_smoothed_traj
-import scipy.interpolate
-import matplotlib.pyplot as plt
+# import scipy.interpolate
+# import matplotlib.pyplot as plt
 from controllers import PoseController, TrajectoryTracker, HeadingController
 from enum import Enum
 
@@ -136,6 +136,7 @@ class Navigator:
         """
         loads in goal if different from current goal, and replans
         """
+        print("got into cmd_nav_callback")
         if (
             data.x != self.x_g
             or data.y != self.y_g
@@ -335,9 +336,10 @@ class Navigator:
         rospy.loginfo("Planning Succeeded")
 
         planned_path = problem.path
-
+        
         # Check whether path is too short
         if len(planned_path) < 4:
+            # self.pose_controller.load_goal(self.x_g, self.y_g, self.theta_g)
             rospy.loginfo("Path too short to track")
             self.switch_mode(Mode.PARK)
             return

@@ -9,9 +9,16 @@ from geometry_msgs.msg import Twist, PoseArray, Pose2D, PoseStamped
 from std_msgs.msg import Float32MultiArray, String
 import tf
 import numpy as np
-
-waypoints = np.array([[3.152, 1.600, np.pi/2],
-                      [3.419, 2.739, np.pi/2]])
+# home = [3.152, 1.600, -0.001]
+waypoints = np.array([[3.388, 2.732,  0.798],
+                      [0.901, 2.717, -0.998],
+                      [0.641, 2.570, -0.963],
+                      [0.324, 2.375, -0.961],
+                      [0.159, 0.580, -0.641],
+                      [0.612, 0.301, -0.138],
+                      [2.426, 0.400,  0.603],
+                      [3.368, 0.301, -0.056],
+                      [3.152, 1.600,  0.005]])
 counter = 0
 
 class Mode(Enum):
@@ -42,8 +49,8 @@ class SupervisorParams:
         self.mapping = rospy.get_param("map")
 
         # Threshold at which we consider the robot at a location
-        self.pos_eps = rospy.get_param("~pos_eps", 0.1)
-        self.theta_eps = rospy.get_param("~theta_eps", 0.3)
+        self.pos_eps = rospy.get_param("~pos_eps", 0.3) #0.1
+        self.theta_eps = rospy.get_param("~theta_eps", 0.5) #0.3
 
         # Time to stop at a stop sign
         self.stop_time = rospy.get_param("~stop_time", 3.)
@@ -80,7 +87,7 @@ class Supervisor:
         self.x_g = 0
         self.y_g = 0
         self.theta_g = 0
-
+        self.counter = 0
         # Current mode
         self.mode = Mode.IDLE
         self.prev_mode = None  # For printing purposes
@@ -92,7 +99,8 @@ class Supervisor:
         ########## PUBLISHERS ##########
 
         # Command pose for controller
-        self.pose_goal_publisher = rospy.Publisher('/cmd_nav', Pose2D, queue_size=10)
+        self.pose_goal_publisher = rospy.Publisher('/cmd_pose', Pose2D, queue_size=10)
+        self.nav_goal_publisher = rospy.Publisher('/cmd_nav', Pose2D, queue_size=10)
 
         # Command vel (used for idling)
         self.cmd_vel_publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
@@ -176,30 +184,37 @@ class Supervisor:
     ### Added callback functions for our object (TIM)
     def fire_hydrant_detected_callback(self, msg):
         # distance to object
+        print("Fire hydrant")
         dist = msg.distance
         if dist > 0 and dist < self.params.stop_min_dist:
-            if self.mode == Mode.Explore:
-                self.save_obj_pos("fire_hydrant")
-            elif self.mode == Mode.Rescue:
-                self.stop_at_obj("fire_hydrant")
+            #self.save_obj_pos("fire_hydrant")
+            self.stop_at_obj("fire_hydrant")
+            #if self.mode == Mode.Explore:
+            #    self.save_obj_pos("fire_hydrant")
+            #elif self.mode == Mode.Rescue:
+            #    self.stop_at_obj("fire_hydrant")
     
     def potted_plant_detected_callback(self, msg):
-       # distance to object
+        # distance to object
+        print("Potted plant found")
         dist = msg.distance
         if dist > 0 and dist < self.params.stop_min_dist:
-            if self.mode == Mode.Explore:
-                self.save_obj_pos("potted_plant"), 
-            elif self.mode == Mode.Rescue:
-                self.stop_at_obj("potted_plant")
+            self.save_obj_pos("potted_plant")
+            #if self.mode == Mode.Explore:
+            #    self.save_obj_pos("potted_plant")
+            #elif self.mode == Mode.Rescue:
+            #    self.stop_at_obj("potted_plant")
 
     def car_detected_callback(self, msg):
         # distance to object
+        print("Car found")
         dist = msg.distance
         if dist > 0 and dist < self.params.stop_min_dist:
-            if self.mode == Mode.Explore:
-                self.save_obj_pos("car")
-            elif self.mode == Mode.Rescue:
-                self.stop_at_obj("car")
+            self.save_obj_pos("car")
+            #if self.mode == Mode.Explore:
+            #    self.save_obj_pos("car")
+            #elif self.mode == Mode.Rescue:
+            #    self.stop_at_obj("car")
 
     ########## STATE MACHINE ACTIONS ##########
 
@@ -218,14 +233,14 @@ class Supervisor:
         self.pose_goal_publisher.publish(pose_g_msg)
 
     def nav_to_pose(self):
-        """ sends the current desired pose to the naviagtor """
+        """ sends the current desired pose to the navigator """
 
         nav_g_msg = Pose2D()
         nav_g_msg.x = self.x_g
         nav_g_msg.y = self.y_g
         nav_g_msg.theta = self.theta_g
 
-        self.pose_goal_publisher.publish(nav_g_msg)
+        self.nav_goal_publisher.publish(nav_g_msg)
 
     def stay_idle(self):
         """ sends zero velocity to stay put """
@@ -248,6 +263,8 @@ class Supervisor:
 
     def save_obj_pos(self, obj):
         self.obj_pos[obj] = [self.x, self.y, self.theta]
+        print(obj, self.x, self.y, self.theta)
+        
     
     def stop_at_obj(self, obj):
         self.stop_start = rospy.get_rostime()
@@ -279,8 +296,8 @@ class Supervisor:
 
 
     ########## STATE MACHINE LOOP ##########
-
     def loop(self):
+        
         """ the main loop of the robot. At each iteration, depending on its
         mode (i.e. the finite state machine's state), if takes appropriate
         actions. This function shouldn't return anything """
@@ -302,22 +319,28 @@ class Supervisor:
         ########## Code starts here ##########
         # TODO: Currently the state machine will just go to the pose without stopping
         #       at the stop sign.
-        global counter
+        
 
         if self.mode == Mode.IDLE:
             # Set the next goal point
-            if counter < np.shape(waypoints)[0]:
-                self.x_g,self.y_g,self.theta_g = waypoints[counter,:]
+            print("Waypoint no = ",self.counter)
+            print("No of waypoints = ",np.shape(waypoints)[0])
+            if self.counter < np.shape(waypoints)[0]:
+                self.x_g,self.y_g,self.theta_g = waypoints[self.counter,:]
                 #Call nav_to_pose function
-                self.nav_to_pose()
                 #Switch sate to Navigate
                 self.mode = Mode.NAVIGATE
 
         elif self.mode == Mode.NAVIGATE:
             # Moving towards a desired pose
             if self.close_to(self.x_g, self.y_g, self.theta_g):
+                print("Goal is ",self.x_g, self.y_g, self.theta_g)
+                print("Current position is ",self.x,self.y,self.theta)
                 self.mode = Mode.IDLE
-                counter = counter + 1
+                self.counter = self.counter + 1
+            else:
+                self.nav_to_pose()
+                # self.go_to_pose()
 
         else:
             raise Exception("This mode is not supported: {}".format(str(self.mode)))

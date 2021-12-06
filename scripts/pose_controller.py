@@ -7,6 +7,7 @@ from geometry_msgs.msg import Twist, PoseArray, Pose2D
 from std_msgs.msg import Float32MultiArray, String
 import tf
 import numpy as np
+from utils import wrapToPi
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "utils"))
 from controllers.P2_pose_stabilization import PoseController
@@ -83,7 +84,7 @@ class PoseControllerNode:
         ########## Code starts here ##########
         # TODO: Create a subscriber to the '/cmd_pose' topic that receives
         #       Pose2D messages and calls cmd_pose_callback.
-
+        rospy.Subscriber('/cmd_pose', Pose2D, self.cmd_pose_callback)
         ########## Code ends here ##########
 
     def gazebo_callback(self, msg):
@@ -105,7 +106,7 @@ class PoseControllerNode:
     def cmd_pose_callback(self, msg):
         ########## Code starts here ##########
         # TODO: Update the goal pose in the pose controller.
-
+        self.controller.load_goal(msg.x, msg.y, msg.theta)
         ########## Code ends here ##########
 
         # Record time of pose update
@@ -145,7 +146,18 @@ class PoseControllerNode:
         ######### YOUR CODE HERE ############
         # TODO: Use your pose controller to compute controls (V, om) given the
         #       robot's current state.
+        B = np.arctan2((self.controller.y_g - self.y), (self.controller.x_g - self.x))
+        rho = np.sqrt((self.controller.y_g - self.y) ** 2 + (self.controller.x_g - self.x) ** 2)
+        delta = wrapToPi(B - self.controller.th_g)
+        alpha = wrapToPi(B - self.theta)
 
+        if abs(alpha) < 0.1:
+            om = self.k2 * alpha + self.k1 * np.sinc(alpha) * np.cos(alpha) * (alpha + self.k3 * delta)
+        else:
+            om = self.k2 * alpha + self.k1 * ((np.sin(alpha) * np.cos(alpha)) / alpha) * (alpha + self.k3 * delta)
+
+
+        V = self.k1 * rho * np.cos(alpha)
         ######### END OF YOUR CODE ##########
 
         cmd = Twist()
