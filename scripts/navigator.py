@@ -136,7 +136,7 @@ class Navigator:
         """
         loads in goal if different from current goal, and replans
         """
-        print("got into cmd_nav_callback")
+        #print("got into cmd_nav_callback")
         if (
             data.x != self.x_g
             or data.y != self.y_g
@@ -273,14 +273,17 @@ class Navigator:
             V, om = self.pose_controller.compute_control(
                 self.x, self.y, self.theta, t
             )
+            print("Pose Controller V, om: ", V, om)
         elif self.mode == Mode.TRACK:
             V, om = self.traj_controller.compute_control(
                 self.x, self.y, self.theta, t
             )
+            print("Traj Controller V, om: ", V, om)
         elif self.mode == Mode.ALIGN:
             V, om = self.heading_controller.compute_control(
                 self.x, self.y, self.theta, t
             )
+            print("Heading Controller V, om: ", V, om)
         else:
             V = 0.0
             om = 0.0

@@ -190,7 +190,7 @@ class AStar(object):
                 self.est_cost_through[x_neigh] = tentative_cost_to_arrive+self.distance(x_neigh,self.x_goal)
             #endfor
         #endwhile
-        return False   
+        return False
 
  
         ########## Code ends here ##########

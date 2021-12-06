@@ -10,15 +10,13 @@ from std_msgs.msg import Float32MultiArray, String
 import tf
 import numpy as np
 # home = [3.152, 1.600, -0.001]
-waypoints = np.array([[3.388, 2.732,  0.798],
-                      [0.901, 2.717, -0.998],
-                      [0.641, 2.570, -0.963],
-                      [0.324, 2.375, -0.961],
-                      [0.159, 0.580, -0.641],
-                      [0.612, 0.301, -0.138],
-                      [2.426, 0.400,  0.603],
-                      [3.368, 0.301, -0.056],
-                      [3.152, 1.600,  0.005]])
+waypoints = np.array([[3.40,  2.736, -0.001,      0,      0, 0.844,   0.537],
+                      [0.827, 2.778, -0.001,      0,      0, 1.000,  -0.012],
+                      [0.266, 2.211, -0.001,      0,      0, 0.913,  -0.407],
+                      [0.212, 0.439, -0.001,      0,      0, 0.752,  -0.659],
+                      [0.523, 0.203, -0.001,      0,      0, 0.358,  -0.934],
+                      [2.369, 0.448, -0.001,      0,      0, -0.619, -0.785],
+                      [3.412, 0.219, -0.001,      0,      0, -0.123, -0.992]])
 counter = 0
 
 class Mode(Enum):
@@ -271,7 +269,18 @@ class Supervisor:
         self.mode = Mode.STOP
         # TODO: Add something to save which object we stopped at
 
-
+    def transformquat2euler(self,waypoint):
+        try:
+            self.x_g = waypoint[0]
+            self.y_g = waypoint[1]
+            quaternion = (waypoint[3],
+                          waypoint[4],
+                          waypoint[5],
+                          waypoint[6])
+            euler = tf.transformations.euler_from_quaternion(quaternion)
+            self.theta_g = euler[2]
+        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+            pass        
     
 
     def has_stopped(self):
@@ -326,13 +335,15 @@ class Supervisor:
             print("Waypoint no = ",self.counter)
             print("No of waypoints = ",np.shape(waypoints)[0])
             if self.counter < np.shape(waypoints)[0]:
-                self.x_g,self.y_g,self.theta_g = waypoints[self.counter,:]
+                self.transformquat2euler(waypoints[self.counter,:])
                 #Call nav_to_pose function
                 #Switch sate to Navigate
                 self.mode = Mode.NAVIGATE
 
         elif self.mode == Mode.NAVIGATE:
             # Moving towards a desired pose
+            print("Error is position is", np.sqrt((self.x_g-self.x)**2+(self.y_g-self.y)**2))
+            print("Error is orientation is", self.theta_g-self.theta)
             if self.close_to(self.x_g, self.y_g, self.theta_g):
                 print("Goal is ",self.x_g, self.y_g, self.theta_g)
                 print("Current position is ",self.x,self.y,self.theta)
@@ -340,7 +351,7 @@ class Supervisor:
                 self.counter = self.counter + 1
             else:
                 self.nav_to_pose()
-                # self.go_to_pose()
+                self.go_to_pose()
 
         else:
             raise Exception("This mode is not supported: {}".format(str(self.mode)))

@@ -35,19 +35,19 @@ class PoseController:
         """
         ########## Code starts here ##########
         #Calculate state coordinate:
-        rho = np.sqrt((self.x_g-x)**2 + (self.y_g-y)**2)
-        alpha = wrapToPi(np.arctan2((self.y_g-y),(self.x_g-x)) - th)
-        delta = wrapToPi(np.arctan2((self.y_g-y),(self.x_g-x)) - self.th_g)
-        if abs(alpha)<0.001:
-           alpha = np.sinc(alpha)
-        #Check if we are close to goal
-        if(rho<RHO_THRES and alpha<ALPHA_THRES and delta<DELTA_THRES):
-            V = 0
-            om = 0
+        B = np.arctan2((self.y_g - y), (self.x_g - x))
+        rho = np.sqrt((self.y_g - y) ** 2 + (self.x_g - x) ** 2)
+        # B = np.arccos((self.y_g - y) / rho)
+        delta = wrapToPi(B - self.th_g)
+        alpha = wrapToPi(B - th)
+
+        if abs(alpha) < ALPHA_THRES:
+            om = self.k2 * alpha + self.k1 * np.sinc(alpha) * np.cos(alpha) * (alpha + self.k3 * delta)
         else:
-            #Control law for V, om
-            V = self.k1*rho*np.cos(alpha)
-            om = self.k2*alpha + self.k1*np.sin(alpha)*np.cos(alpha)*(alpha+self.k3*delta)/alpha
+            om = self.k2 * alpha + self.k1 * ((np.sin(alpha) * np.cos(alpha)) / alpha) * (alpha + self.k3 * delta)
+
+
+        V = self.k1 * rho * np.cos(alpha)
         ########## Code ends here ##########
 
         # apply control limits
