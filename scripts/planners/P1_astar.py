@@ -39,13 +39,17 @@ class AStar(object):
               useful here
         """
         ########## Code starts here ##########
-        if(self.occupancy.is_free(x)):
-            if x[0] >= self.statespace_lo[0] and x[1] >= self.statespace_lo[1]:
-                if x[0] <= self.statespace_hi[0] and x[1] <= self.statespace_hi[1]:
+        if (x > self.statespace_hi or  x < self.statespace_lo):
+            return False
+        else:   # else check is_free method from DetOccupancyGrid2D object
+            return self.occupancy.is_free(x)
+        """if(self.occupancy.is_free(x)):
+            if x[0] > self.statespace_lo[0]+1 and x[1] > self.statespace_lo[1]+1:
+                if x[0] < self.statespace_hi[0]-1 and x[1] < self.statespace_hi[1]-1:
                     return 1
             
         else:
-           return 0
+           return 0"""
         ########## Code ends here ##########
 
     def distance(self, x1, x2):
@@ -60,7 +64,8 @@ class AStar(object):
         HINT: This should take one line. Tuples can be converted to numpy arrays using np.array().
         """
         ########## Code starts here ##########
-        return np.linalg.norm(np.array(x1)-np.array(x2))
+        return np.sqrt((x1[0] - x2[0])**2 + (x1[1] - x2[1])**2)
+        """return np.linalg.norm(np.array(x1)-np.array(x2))"""
         ########## Code ends here ##########
 
     def snap_to_grid(self, x):
@@ -94,15 +99,20 @@ class AStar(object):
         """
         neighbors = []
         ########## Code starts here ##########
+        res = self.resolution
+        moveList = [(-res,-res),(res,res), (res,0), (res,-res), (0,res), (0,-res), (-res,res), (-res,0)]
+        for move in moveList:
+            neighbor = self.snap_to_grid((x[0] + move[0], x[1] + move[1]))
+            if (self.is_free(neighbor)): neighbors.append(neighbor)
         #import pdb
         #pdb.set_trace()
         #Array of possible neighbors: +X, -X, +Y, -Y, +X+Y,-X-Y, +X-Y,-X+Y
-        dirs = np.array([[self.resolution,0],[-self.resolution,0],[0,self.resolution],[0,-self.resolution],
+        """dirs = np.array([[self.resolution,0],[-self.resolution,0],[0,self.resolution],[0,-self.resolution],
         [self.resolution,self.resolution],[-self.resolution,-self.resolution],[self.resolution,-self.resolution],[-self.resolution,self.resolution]])
         
         for row in dirs:
             if(self.is_free(x+row)):
-                neighbors.append(self.snap_to_grid(x+row))
+                neighbors.append(self.snap_to_grid(x+row))"""
 
         ########## Code ends here ##########
         return neighbors
@@ -168,10 +178,14 @@ class AStar(object):
                 set membership efficiently using the syntax "if item in set".
         """
         ########## Code starts here ##########
-        while(len(self.open_set)>0):    
+        
+        counter = 0
+
+        while(len(self.open_set)>0) and counter < 1000:
+            counter = counter + 1
             x_current = self.find_best_est_cost_through()
             if(x_current==self.x_goal):
-                self.path = self.reconstruct_path()  
+                self.path = self.reconstruct_path()
                 return True
             self.open_set.remove(x_current)
             self.closed_set.add(x_current)
@@ -188,10 +202,8 @@ class AStar(object):
                 self.came_from[x_neigh] = x_current
                 self.cost_to_arrive[x_neigh] = tentative_cost_to_arrive
                 self.est_cost_through[x_neigh] = tentative_cost_to_arrive+self.distance(x_neigh,self.x_goal)
-            #endfor
-        #endwhile
+            
         return False
-
  
         ########## Code ends here ##########
 

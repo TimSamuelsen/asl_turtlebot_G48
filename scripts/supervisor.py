@@ -6,7 +6,7 @@ import rospy
 from asl_turtlebot.msg import DetectedObject
 from gazebo_msgs.msg import ModelStates
 from geometry_msgs.msg import Twist, PoseArray, Pose2D, PoseStamped
-from std_msgs.msg import Float32MultiArray, String
+from std_msgs.msg import Float32MultiArray, String, Int16MultiArray, Int16
 import tf
 import numpy as np
 # home = [3.152, 1.600, -0.001]
@@ -29,6 +29,8 @@ class Mode(Enum):
     # MANUAL = 6
     IDLE = 1
     NAVIGATE = 2
+    RESCUE = 3
+    STOP = 4
 
 
 
@@ -90,9 +92,11 @@ class Supervisor:
         self.mode = Mode.IDLE
         self.prev_mode = None  # For printing purposes
 
-        # obj positions
-        keys = ["fire_hydrant", "car", "potted_plant"]
-        self.obj_pos = dict.fromkeys(keys, None)
+        # Added dicts for storing object position and whether they have been rescued
+        objects = ["fire_hydrant", "car", "potted_plant"]
+        self.obj_pos = dict.fromkeys(objects, None)
+        self.obj_rescue = dict.fromkeys(objects, False)
+        self.obj_order = []
 
         ########## PUBLISHERS ##########
 
@@ -103,6 +107,9 @@ class Supervisor:
         # Command vel (used for idling)
         self.cmd_vel_publisher = rospy.Publisher('/cmd_vel', Twist, queue_size=10)
 
+        # Adding publishers for settings robot state and obj rescue order
+        self.robot_state_publisher = rospy.Publisher('/robot_state', Int16, queue_size=10)
+        self.obj_rescue_publisher = rospy.Publisher('/obj_rescue', String, queue_size=10)
         ########## SUBSCRIBERS ##########
 
         # Stop sign detector
@@ -111,7 +118,9 @@ class Supervisor:
         rospy.Subscriber('/detector/car', DetectedObject, self.car_detected_callback)
         rospy.Subscriber('/detector/fire_hydrant', DetectedObject, self.fire_hydrant_detected_callback)
         rospy.Subscriber('/detector/potted_plant', DetectedObject, self.potted_plant_detected_callback)
-        ###
+        ### Adding subsribers for setting state and rescue order
+        rospy.Subscriber('/robot_state', Int16, self.set_robot_state_callback)
+        rospy.Subscriber('/rescue_order', String, self.set_rescue_order_callback)
 
         # High-level navigation pose
         rospy.Subscriber('/nav_pose', Pose2D, self.nav_pose_callback)
@@ -181,38 +190,37 @@ class Supervisor:
 
     ### Added callback functions for our object (TIM)
     def fire_hydrant_detected_callback(self, msg):
-        # distance to object
-        print("Fire hydrant")
-        dist = msg.distance
-        if dist > 0 and dist < self.params.stop_min_dist:
-            #self.save_obj_pos("fire_hydrant")
-            self.stop_at_obj("fire_hydrant")
-            #if self.mode == Mode.Explore:
-            #    self.save_obj_pos("fire_hydrant")
-            #elif self.mode == Mode.Rescue:
-            #    self.stop_at_obj("fire_hydrant")
+        self.obj_detected("fire_hydrant", msg.distance)
     
     def potted_plant_detected_callback(self, msg):
-        # distance to object
-        print("Potted plant found")
-        dist = msg.distance
-        if dist > 0 and dist < self.params.stop_min_dist:
-            self.save_obj_pos("potted_plant")
-            #if self.mode == Mode.Explore:
-            #    self.save_obj_pos("potted_plant")
-            #elif self.mode == Mode.Rescue:
-            #    self.stop_at_obj("potted_plant")
+        self.obj_detected("potted_plant", msg.distance)
 
     def car_detected_callback(self, msg):
-        # distance to object
-        print("Car found")
-        dist = msg.distance
-        if dist > 0 and dist < self.params.stop_min_dist:
-            self.save_obj_pos("car")
-            #if self.mode == Mode.Explore:
-            #    self.save_obj_pos("car")
-            #elif self.mode == Mode.Rescue:
-            #    self.stop_at_obj("car")
+        self.obj_detected("car", msg.distance)
+
+    def set_robot_state_callback(self, state):
+        print("robot state change")
+        if state.data == 1:
+            print("entering idle mode")
+            self.mode = Mode.IDLE
+        elif state.data == 2:
+            print("entering nav mode")
+            self.mode = Mode.NAV
+        elif state.data == 3:
+            print("entering rescue mode")
+            self.mode = Mode.RESCUE
+        print(self.mode)
+
+    def set_rescue_order_callback(self, order_string):
+        charList = list(order_string.data)
+        for i in charList:
+            if i == "0":
+                self.obj_order.append("fire_hydrant")
+            elif i == "1":
+                self.obj_order.append("potted_plant")
+            elif i == "2":
+                self.obj_order.append("car")
+        print(self.obj_order)
 
     ########## STATE MACHINE ACTIONS ##########
 
@@ -259,15 +267,27 @@ class Supervisor:
         self.stop_sign_start = rospy.get_rostime()
         self.mode = Mode.STOP
 
+    # Added functions for object detection, storing object position and stopping at object (TIM)
+
+    def obj_detected(self, obj, dist):
+        # if we are within an acceptable range of the object
+        if dist > 0 and dist < self.params.stop_min_dist:
+            # if we are exploring and have not saved this objects position -> save object position
+            if self.mode == Mode.IDLE and self.obj_pos[obj] is None:
+                self.save_obj_pos(obj)
+            # if we are rescuing and have not rescued this object -> stop at the object for rescue
+            elif self.mode == Mode.RESCUE and self.obj_rescue[obj] is False:
+                self.stop_at_obj(obj)
+                self.obj_rescue[obj] = True
+
     def save_obj_pos(self, obj):
         self.obj_pos[obj] = [self.x, self.y, self.theta]
-        print(obj, self.x, self.y, self.theta)
-        
+        print("Updated object positions: ", self.obj_pos)
     
     def stop_at_obj(self, obj):
         self.stop_start = rospy.get_rostime()
         self.mode = Mode.STOP
-        # TODO: Add something to save which object we stopped at
+        print("rescuing: ", obj)
 
     def transformquat2euler(self,waypoint):
         try:
@@ -342,8 +362,8 @@ class Supervisor:
 
         elif self.mode == Mode.NAVIGATE:
             # Moving towards a desired pose
-            print("Error is position is", np.sqrt((self.x_g-self.x)**2+(self.y_g-self.y)**2))
-            print("Error is orientation is", self.theta_g-self.theta)
+            #print("Error is position is", np.sqrt((self.x_g-self.x)**2+(self.y_g-self.y)**2))
+            #print("Error is orientation is", self.theta_g-self.theta)
             if self.close_to(self.x_g, self.y_g, self.theta_g):
                 print("Goal is ",self.x_g, self.y_g, self.theta_g)
                 print("Current position is ",self.x,self.y,self.theta)
@@ -352,6 +372,12 @@ class Supervisor:
             else:
                 self.nav_to_pose()
                 self.go_to_pose()
+
+        elif self.mode == Mode.RESCUE:
+            a=0
+        
+        elif self.mode == Mode.STOP:
+            a=0
 
         else:
             raise Exception("This mode is not supported: {}".format(str(self.mode)))
