@@ -1,7 +1,7 @@
 <launch>
   <arg name="sim" default="true"/>
   <arg name="use_tf" default="true"/>
-  <rosparam param="use_tf" subst_value="true">$(arg use_tf)</rosparam>
+  <rosparam param="use_tf" subst_value="false">$(arg use_tf)</rosparam>
 
   <include file="$(find asl_turtlebot)/launch/root.launch">
     <arg name="world" value="grp48_proj_new" />

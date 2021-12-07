@@ -58,7 +58,7 @@ class Navigator:
         self.occupancy_updated = False
 
         # plan parameters
-        self.plan_resolution = 0.1
+        self.plan_resolution = 0.2#0.1
         self.plan_horizon = 15
 
         # time when we started following the plan
@@ -78,21 +78,21 @@ class Navigator:
 
         # threshold at which navigator switches from trajectory to pose control
         self.near_thresh = 0.2
-        self.at_thresh = 0.02
-        self.at_thresh_theta = 0.05
+        self.at_thresh = 0.05#0.02
+        self.at_thresh_theta = 0.1#0.05
 
         # trajectory smoothing
-        self.spline_alpha = 0.10#previously 0.15
+        self.spline_alpha = 0.05#previously 0.15
         self.traj_dt = 0.1
 
         # trajectory tracking controller parameters
-        self.kpx = 3#0.5
-        self.kpy = 3#0.5
-        self.kdx = 3#1.5
-        self.kdy = 3#1.5
+        self.kpx = 1.5#0.5
+        self.kpy = 1.5#0.5
+        self.kdx = 1.5#1.5
+        self.kdy = 1.5#1.5
 
         # heading controller parameters
-        self.kp_th = 0.75#2
+        self.kp_th = 0.5#2
 
         self.traj_controller = TrajectoryTracker(
             self.kpx, self.kpy, self.kdx, self.kdy, self.v_max, self.om_max
@@ -322,6 +322,7 @@ class Navigator:
         x_init = self.snap_to_grid((self.x, self.y))
         self.plan_start = x_init
         x_goal = self.snap_to_grid((self.x_g, self.y_g))
+
         problem = AStar(
             state_min,
             state_max,
@@ -334,10 +335,6 @@ class Navigator:
         rospy.loginfo("Navigator: computing navigation plan")
         success = problem.solve()
         if not success:
-            #cmd_vel = Twist()
-            #cmd_vel.linear.x = 0
-            #cmd_vel.angular.z = 0
-            #self.nav_vel_pub.publish(cmd_vel)
             rospy.loginfo("Planning failed")
             return
         rospy.loginfo("Planning Succeeded")
@@ -348,8 +345,8 @@ class Navigator:
         if len(planned_path) < 4:
             # self.pose_controller.load_goal(self.x_g, self.y_g, self.theta_g)
             rospy.loginfo("Path too short to track")
-            #self.switch_mode(Mode.PARK)
-            self.switch_mode(Mode.ALIGN)
+            self.switch_mode(Mode.PARK)
+            #self.switch_mode(Mode.ALIGN)
             return
 
         # Smooth and generate a trajectory
@@ -368,9 +365,8 @@ class Navigator:
             th_err = wrapToPi(th_init_new - self.theta)
             t_init_align = abs(th_err / self.om_max)
             t_remaining_new = t_init_align + t_new[-1]
-
+            
             if t_remaining_new > t_remaining_curr:
-                
                 rospy.loginfo(
                     "New plan rejected (longer duration than current plan)"
                 )
@@ -378,7 +374,7 @@ class Navigator:
                     traj_new, self.nav_smoothed_path_rej_pub
                 )
                 return
-
+                
         # Otherwise follow the new plan
         self.publish_planned_path(planned_path, self.nav_planned_path_pub)
         self.publish_smoothed_path(traj_new, self.nav_smoothed_path_pub)
