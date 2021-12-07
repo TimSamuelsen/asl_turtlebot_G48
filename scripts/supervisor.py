@@ -32,7 +32,8 @@ class Mode(Enum):
     IDLE = 1
     NAVIGATE = 2
     RESCUE = 3
-    STOP = 4
+    RESCUE_NAVIGATE = 4
+    STOP = 5
 
 
 
@@ -58,7 +59,7 @@ class SupervisorParams:
         self.stop_time = rospy.get_param("~stop_time", 3.)
 
         # Minimum distance from a stop sign to obey it
-        self.stop_min_dist = rospy.get_param("~stop_min_dist", 0.5)
+        self.stop_min_dist = rospy.get_param("~stop_min_dist", 1)
         
 
         # Time taken to cross an intersection
@@ -90,6 +91,7 @@ class Supervisor:
         self.y_g = 0
         self.theta_g = 0
         self.counter = 0
+        self.rescue_counter = 0
         # Current mode
         self.mode = Mode.IDLE
         self.prev_mode = None  # For printing purposes
@@ -99,6 +101,8 @@ class Supervisor:
         self.obj_pos = dict.fromkeys(objects, None)
         self.obj_rescue = dict.fromkeys(objects, False)
         self.obj_order = []
+
+        self.stop_sign_start = rospy.get_rostime()
 
         ########## PUBLISHERS ##########
 
@@ -275,12 +279,13 @@ class Supervisor:
         # if we are within an acceptable range of the object
         if dist > 0 and dist < self.params.stop_min_dist:
             # if we are exploring and have not saved this objects position -> save object position
-            if self.mode == Mode.IDLE and self.obj_pos[obj] is None:
+            if self.mode == Mode.NAVIGATE and self.obj_pos[obj] is None:
                 self.save_obj_pos(obj)
             # if we are rescuing and have not rescued this object -> stop at the object for rescue
-            elif self.mode == Mode.RESCUE and self.obj_rescue[obj] is False:
-                self.stop_at_obj(obj)
-                self.obj_rescue[obj] = True
+            elif self.mode == Mode.RESCUE_NAVIGATE and self.obj_rescue[obj] is False:
+                x=0
+                #self.stop_at_obj(obj)
+                #self.obj_rescue[obj] = True
 
     def save_obj_pos(self, obj):
         self.obj_pos[obj] = [self.x, self.y, self.theta]
@@ -290,6 +295,14 @@ class Supervisor:
         self.stop_start = rospy.get_rostime()
         self.mode = Mode.STOP
         print("rescuing: ", obj)
+
+    def get_next_obj(self):
+        obj = self.obj_order[self.rescue_counter]
+        next_obj = self.obj_pos[obj]
+        self.x_g = next_obj[0]
+        self.y_g = next_obj[1]
+        self.theta_g = next_obj[2]
+        print("Res Goal: ", self.x_g, self.y_g, self.theta_g)
 
     def transformquat2euler(self,waypoint):
         try:
@@ -301,6 +314,7 @@ class Supervisor:
                           waypoint[6])
             euler = tf.transformations.euler_from_quaternion(quaternion)
             self.theta_g = euler[2]
+            print("Exp Goal: ", self.x_g, self.y_g, self.theta_g)
         except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
             pass        
     
@@ -376,10 +390,34 @@ class Supervisor:
                 self.go_to_pose()
 
         elif self.mode == Mode.RESCUE:
-            a=0
-        
+            print("Rescues completed: ", self.rescue_counter)
+            if not self.obj_order:
+                print("Set rescue order first!")
+            else:
+                if self.rescue_counter < len(self.obj_order) - 1:
+                    self.get_next_obj()
+                    self.mode = Mode.RESCUE_NAVIGATE
+                else:
+                    self.mode = Mode.IDLE
+
+        elif self.mode == Mode.RESCUE_NAVIGATE:
+            if self.close_to(self.x_g, self.y_g, self.theta_g):
+                print("Goal is ",self.x_g, self.y_g, self.theta_g)
+                print("Current position is ",self.x,self.y,self.theta)
+                self.stop_at_obj(self.obj_order[self.rescue_counter])
+                #self.rescue_counter += 1
+                #self.mode = Mode.RESCUE
+            else:
+                self.nav_to_pose()
+                self.go_to_pose()
+
         elif self.mode == Mode.STOP:
-            a=0
+            if self.has_stopped():
+                self.rescue_counter += 1
+                self.obj_rescue[self.obj_order[self.rescue_counter]] = True
+                self.mode = Mode.RESCUE
+            else:
+                print("Rescuing...")
 
         else:
             raise Exception("This mode is not supported: {}".format(str(self.mode)))
