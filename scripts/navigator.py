@@ -86,8 +86,8 @@ class Navigator:
         self.traj_dt = 0.1
 
         # trajectory tracking controller parameters
-        self.kpx = 1.5#0.5
-        self.kpy = 1.5#0.5
+        self.kpx = 5#0.5
+        self.kpy = 5#0.5
         self.kdx = 1.5#1.5
         self.kdy = 1.5#1.5
 
@@ -161,6 +161,7 @@ class Navigator:
         receives new map info and updates the map
         """
         self.map_probs = msg.data
+        
         # if we've received the map metadata and have a way to update it:
         if (
             self.map_width > 0
@@ -176,6 +177,46 @@ class Navigator:
                 3,#window size=8
                 self.map_probs,
             )
+
+            # DILATION CODE
+            holder = np.array([])
+
+            for i in range(self.map_height):
+                row = np.array([])
+                for j in range(self.map_width):
+                    row = np.append(row,[self.occupancy.is_free([i, j])])
+                    #row = np.expand_dims(row, axis=0)
+
+                if i == 0:
+                    holder = row
+                else:
+                    holder = np.vstack((holder, row))
+            
+            G = np.zeros((holder.shape[0], holder.shape[1]))
+            dilation_spacing = 5
+
+            row_pad = int(np.floor(dilation_spacing / 2))
+            column_pad = int(np.floor(dilation_spacing / 2))
+            holder_zero_pad = np.zeros((holder.shape[0]+dilation_spacing, holder.shape[1]+dilation_spacing))
+            holder_zero_pad[row_pad:row_pad+holder.shape[0], column_pad:column_pad+holder.shape[1]] = holder
+
+            for j in range(holder.shape[0]):
+                for k in range(holder.shape[1]):
+                    G[j][k] = np.sum(holder_zero_pad[j:j+dilation_spacing, k:k+dilation_spacing].flatten()) > 0
+            
+            self.map.probs = tuple(G.flatten())
+
+            self.occupancy2 = StochOccupancyGrid2D(
+                self.map_resolution,
+                self.map_width,
+                self.map_height,
+                self.map_origin[0],
+                self.map_origin[1],
+                3,#window size=8
+                self.map_probs,
+            )
+            # DILATION CODE END
+
             if self.x_g is not None:
                 # if we have a goal to plan to, replan
                 rospy.loginfo("replanning because of new map")
@@ -328,7 +369,7 @@ class Navigator:
             state_max,
             x_init,
             x_goal,
-            self.occupancy,
+            self.occupancy2,
             self.plan_resolution,
         )
 

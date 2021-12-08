@@ -10,7 +10,8 @@ from std_msgs.msg import Float32MultiArray, String, Int16MultiArray, Int16
 import tf
 import numpy as np
 # home = [3.152, 1.600, -0.001]
-waypoints = np.array([[3.40,  2.736, -0.001,      0,      0,  0.844,   0.537],
+waypoints_old = np.array([[3.40,  2.736, -0.001,      0,      0,  0.844,   0.537],
+                      [2.371, 2.660, -0.001,      0,      0,  0.672,  -0.740],
                       [0.849, 2.731, -0.001,      0,      0,  1.000,  -0.033],
                       [0.623, 2.554, -0.001,  0.003,      0,  0.930,  -0.367],
                       [0.214, 2.200, -0.001,      0,      0,  0.937,  -0.349],#0.341, 2.310
@@ -19,6 +20,14 @@ waypoints = np.array([[3.40,  2.736, -0.001,      0,      0,  0.844,   0.537],
                       [2.369, 0.448, -0.001,      0,      0, -0.619,  -0.785],
                       [3.412, 0.219, -0.001,      0,      0, -0.123,  -0.992],
                       [3.152, 1.600, -0.001,      0,      0,  0.005,   1.000]])
+
+waypoints = np.array([[3.329, 2.808, -0.001, 0, 0, 0.751,  0.660],  # first corner
+                      [2.443, 2.720, -0.001, 0, 0, 0.702, -0.712],  # look at banana
+                      [0.557, 2.718, -0.001, 0, 0, 0.977,  0.216],  # look at car
+                      [0.139, 1.339, -0.001, 0, 0, 0.672, -0.740],  # midpoint between car and tree
+                      [0.271, 0.259, -0.001, 0, 0, 0.847, -0.532],  # look at tree
+                      [2.388, 0.321, -0.001, 0, 0, -0.666, -0.746], # look at fire hydrant
+                      [3.152, 1.600, -0.001, 0, 0, 0.005,  1.000]]) # go home
 counter = 0
 
 class Mode(Enum):
@@ -116,6 +125,9 @@ class Supervisor:
         # Adding publishers for settings robot state and obj rescue order
         self.robot_state_publisher = rospy.Publisher('/robot_state', Int16, queue_size=10)
         self.obj_rescue_publisher = rospy.Publisher('/obj_rescue', String, queue_size=10)
+
+        # Add publisher for publishing "vroom" when car is seen and possibly more things when other objects detected
+        self.obj_detect_publisher = rospy.Publisher('/obj_detect', String, queue_size=10)
         ########## SUBSCRIBERS ##########
 
         # Stop sign detector
@@ -197,12 +209,15 @@ class Supervisor:
     ### Added callback functions for our object (TIM)
     def fire_hydrant_detected_callback(self, msg):
         self.obj_detected("fire_hydrant", msg.distance)
+        self.obj_detect_publisher.publish("splash")
     
     def potted_plant_detected_callback(self, msg):
         self.obj_detected("potted_plant", msg.distance)
+        self.obj_detect_publisher.publish("i'm a tree")
 
     def car_detected_callback(self, msg):
         self.obj_detected("car", msg.distance)
+        self.obj_detect_publisher.publish("vroom")
 
     def set_robot_state_callback(self, state):
         print("robot state change")
