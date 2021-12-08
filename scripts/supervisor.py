@@ -23,9 +23,9 @@ waypoints_old = np.array([[3.40,  2.736, -0.001,      0,      0,  0.844,   0.537
 
 waypoints = np.array([[3.329, 2.808, -0.001, 0, 0, 0.751,  0.660],  # first corner
                       [2.443, 2.720, -0.001, 0, 0, 0.702, -0.712],  # look at banana
-                      [0.557, 2.718, -0.001, 0, 0, 0.977,  0.216],  # look at car
-                      [0.139, 1.339, -0.001, 0, 0, 0.672, -0.740],  # midpoint between car and tree
-                      [0.271, 0.259, -0.001, 0, 0, 0.847, -0.532],  # look at tree
+                      [0.457, 2.618, -0.001, 0, 0, 0.977,  0.216],  # look at car
+                      [0.100, 1.339, -0.001, 0, 0, 0.672, -0.740],  # midpoint between car and tree
+                      [0.171, 0.159, -0.001, 0, 0, 0.847, -0.532],  # look at tree
                       [2.388, 0.321, -0.001, 0, 0, -0.666, -0.746], # look at fire hydrant
                       [3.152, 1.600, -0.001, 0, 0, 0.005,  1.000]]) # go home
 counter = 0
@@ -68,7 +68,7 @@ class SupervisorParams:
         self.stop_time = rospy.get_param("~stop_time", 3.)
 
         # Minimum distance from a stop sign to obey it
-        self.stop_min_dist = rospy.get_param("~stop_min_dist", 1)
+        self.stop_min_dist = rospy.get_param("~stop_min_dist", 1.5)
         
 
         # Time taken to cross an intersection
@@ -131,7 +131,7 @@ class Supervisor:
         ########## SUBSCRIBERS ##########
 
         # Stop sign detector
-        rospy.Subscriber('/detector/stop_sign', DetectedObject, self.stop_sign_detected_callback)
+        #rospy.Subscriber('/detector/stop_sign', DetectedObject, self.stop_sign_detected_callback)
         ### Added subscribers for our objects (TIM)
         rospy.Subscriber('/detector/car', DetectedObject, self.car_detected_callback)
         rospy.Subscriber('/detector/fire_hydrant', DetectedObject, self.fire_hydrant_detected_callback)
@@ -233,6 +233,7 @@ class Supervisor:
         print(self.mode)
 
     def set_rescue_order_callback(self, order_string):
+        
         charList = list(order_string.data)
         for i in charList:
             if i == "0":
@@ -409,7 +410,7 @@ class Supervisor:
             if not self.obj_order:
                 print("Set rescue order first!")
             else:
-                if self.rescue_counter < len(self.obj_order) - 1:
+                if self.rescue_counter < len(self.obj_order):
                     self.get_next_obj()
                     self.mode = Mode.RESCUE_NAVIGATE
                 else:

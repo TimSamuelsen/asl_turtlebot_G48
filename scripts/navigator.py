@@ -82,7 +82,7 @@ class Navigator:
         self.at_thresh_theta = 0.1#0.05
 
         # trajectory smoothing
-        self.spline_alpha = 0.05#previously 0.15
+        self.spline_alpha = 0.01#previously 0.15
         self.traj_dt = 0.1
 
         # trajectory tracking controller parameters
@@ -90,6 +90,8 @@ class Navigator:
         self.kpy = 5#0.5
         self.kdx = 1.5#1.5
         self.kdy = 1.5#1.5
+
+        self.replan_limit = 0
 
         # heading controller parameters
         self.kp_th = 0.5#2
@@ -160,7 +162,7 @@ class Navigator:
         """
         receives new map info and updates the map
         """
-        self.map_probs = msg.data
+        self.map_probs = msg.data # 1 x 17,000 tuple of probabilities (384 x 384 grid)
         
         # if we've received the map metadata and have a way to update it:
         if (
@@ -177,44 +179,44 @@ class Navigator:
                 3,#window size=8
                 self.map_probs,
             )
-
             # DILATION CODE
-            holder = np.array([])
 
-            for i in range(self.map_height):
-                row = np.array([])
-                for j in range(self.map_width):
-                    row = np.append(row,[self.occupancy.is_free([i, j])])
-                    #row = np.expand_dims(row, axis=0)
-
-                if i == 0:
-                    holder = row
-                else:
-                    holder = np.vstack((holder, row))
+            # holder = np.array([])
             
+            # # Converts from stochastic to deterministic map (1's and 0's instead of probabilities)
+            # for i in range(self.map_height):
+            #     row = np.array([])
+            #     for j in range(self.map_width):
+            #         row = np.append(row,[self.occupancy.is_free([i, j])])
+            #         #row = np.expand_dims(row, axis=0)
+
+            #     if i == 0:
+            #         holder = row
+            #     else:
+            #         holder = np.vstack((holder, row))
+            
+            #Dilation with probabilities 
+            holder = np.array(self.map_probs).reshape(self.map_width,-1)
+            thresh = 0.1 
             G = np.zeros((holder.shape[0], holder.shape[1]))
-            dilation_spacing = 5
+            dilation_spacing = 3
 
             row_pad = int(np.floor(dilation_spacing / 2))
             column_pad = int(np.floor(dilation_spacing / 2))
-            holder_zero_pad = np.zeros((holder.shape[0]+dilation_spacing, holder.shape[1]+dilation_spacing))
+            holder_zero_pad = np.zeros((holder.shape[0]+dilation_spacing-1, holder.shape[1]+dilation_spacing-1))
             holder_zero_pad[row_pad:row_pad+holder.shape[0], column_pad:column_pad+holder.shape[1]] = holder
 
             for j in range(holder.shape[0]):
                 for k in range(holder.shape[1]):
-                    G[j][k] = np.sum(holder_zero_pad[j:j+dilation_spacing, k:k+dilation_spacing].flatten()) > 0
+                    #G[j][k] = (np.sum(holder_zero_pad[j:j+dilation_spacing, k:k+dilation_spacing].flatten())/dilation_spacing**2)
+                    sub_matrix = holder_zero_pad[j:j+dilation_spacing, k:k+dilation_spacing]
+                    if(sub_matrix.max()>thresh):
+                        G[j][k] = sub_matrix.max()
             
-            self.map.probs = tuple(G.flatten())
+            self.occupancy.probs = tuple(G.flatten())
 
-            self.occupancy2 = StochOccupancyGrid2D(
-                self.map_resolution,
-                self.map_width,
-                self.map_height,
-                self.map_origin[0],
-                self.map_origin[1],
-                3,#window size=8
-                self.map_probs,
-            )
+            #self.nav_smoothed_path_rej_pub = rospy.Publisher("/map_dilated", OccupancyGrid, queue_size=10)
+            
             # DILATION CODE END
 
             if self.x_g is not None:
@@ -369,7 +371,7 @@ class Navigator:
             state_max,
             x_init,
             x_goal,
-            self.occupancy2,
+            self.occupancy,
             self.plan_resolution,
         )
 
@@ -407,7 +409,8 @@ class Navigator:
             t_init_align = abs(th_err / self.om_max)
             t_remaining_new = t_init_align + t_new[-1]
             
-            if t_remaining_new > t_remaining_curr:
+            if t_remaining_new > t_remaining_curr and self.replan_limit < 10:
+                self.replan_limit += 1
                 rospy.loginfo(
                     "New plan rejected (longer duration than current plan)"
                 )
@@ -415,6 +418,8 @@ class Navigator:
                     traj_new, self.nav_smoothed_path_rej_pub
                 )
                 return
+            else:
+                self.replan_limit = 0
                 
         # Otherwise follow the new plan
         self.publish_planned_path(planned_path, self.nav_planned_path_pub)
