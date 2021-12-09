@@ -9,7 +9,7 @@ from geometry_msgs.msg import Twist, PoseArray, Pose2D, PoseStamped
 from std_msgs.msg import Float32MultiArray, String, Int16MultiArray, Int16
 import tf
 import numpy as np
-# home = [3.152, 1.600, -0.001]
+home = np.array([3.152, 1.600, -0.001, 0, 0, 0.005, 1.000])
 waypoints_old = np.array([[3.40,  2.736, -0.001,      0,      0,  0.844,   0.537],
                       [2.371, 2.660, -0.001,      0,      0,  0.672,  -0.740],
                       [0.849, 2.731, -0.001,      0,      0,  1.000,  -0.033],
@@ -22,11 +22,12 @@ waypoints_old = np.array([[3.40,  2.736, -0.001,      0,      0,  0.844,   0.537
                       [3.152, 1.600, -0.001,      0,      0,  0.005,   1.000]])
 
 waypoints = np.array([[3.329, 2.808, -0.001, 0, 0, 0.751,  0.660],  # first corner
-                      [2.443, 2.720, -0.001, 0, 0, 0.702, -0.712],  # look at banana
-                      [0.457, 2.618, -0.001, 0, 0, 0.977,  0.216],  # look at car
-                      [0.100, 1.339, -0.001, 0, 0, 0.672, -0.740],  # midpoint between car and tree
-                      [0.171, 0.159, -0.001, 0, 0, 0.847, -0.532],  # look at tree
-                      [2.388, 0.321, -0.001, 0, 0, -0.666, -0.746], # look at fire hydrant
+                      [2.333, 2.710, -0.001, 0, 0, -0.440, 0.897],
+                      # old[2.329, 2.633, -0.001, 0, 0, 0.54, -0.841],  # look at banana
+                      [0.345, 2.615, -0.001, 0, 0, -0.855,  -0.518],  # look at car
+                      #[0.100, 1.339, -0.001, 0, 0, 0.672, -0.740],  # midpoint between car and tree
+                      [0.285, 0.152, -0.001, 0, 0, -0.938, -0.346],  # look at tree
+                      [2.388, 0.321, -0.001, 0, 0, 0.582,   0.813], # look at fire hydrant
                       [3.152, 1.600, -0.001, 0, 0, 0.005,  1.000]]) # go home
 counter = 0
 
@@ -106,11 +107,11 @@ class Supervisor:
         self.prev_mode = None  # For printing purposes
 
         # Added dicts for storing object position and whether they have been rescued
-        objects = ["fire_hydrant", "car", "potted_plant"]
+        objects = ["fire_hydrant", "car", "potted_plant", "kite"]
         self.obj_pos = dict.fromkeys(objects, None)
         self.obj_rescue = dict.fromkeys(objects, False)
         self.obj_order = []
-
+        self.rescue_set = False
         self.stop_sign_start = rospy.get_rostime()
 
         ########## PUBLISHERS ##########
@@ -136,6 +137,7 @@ class Supervisor:
         rospy.Subscriber('/detector/car', DetectedObject, self.car_detected_callback)
         rospy.Subscriber('/detector/fire_hydrant', DetectedObject, self.fire_hydrant_detected_callback)
         rospy.Subscriber('/detector/potted_plant', DetectedObject, self.potted_plant_detected_callback)
+        rospy.Subscriber('detector/kite', DetectedObject, self.kite_detected_callback)
         ### Adding subsribers for setting state and rescue order
         rospy.Subscriber('/robot_state', Int16, self.set_robot_state_callback)
         rospy.Subscriber('/rescue_order', String, self.set_rescue_order_callback)
@@ -219,6 +221,10 @@ class Supervisor:
         self.obj_detected("car", msg.distance)
         self.obj_detect_publisher.publish("vroom")
 
+    def kite_detected_callback(self, msg):
+        self.obj_detected("kite", msg.distance)
+        self.obj_detect_publisher.publish("I like flying")
+
     def set_robot_state_callback(self, state):
         print("robot state change")
         if state.data == 1:
@@ -234,21 +240,70 @@ class Supervisor:
 
     def set_rescue_order_callback(self, order_string):
         
-        charList = list(order_string.data)
-        for i in charList:
-            if i == "0":
-                self.obj_order.append("fire_hydrant")
-            elif i == "1":
-                self.obj_order.append("potted_plant")
-            elif i == "2":
-                self.obj_order.append("car")
-        print(self.obj_order)
+        
+        #self.obj_pos = {'fire_hydrant': [2.45182918414535, 0.2805413800584965, 0.769803638004356], 'car': [0.33802552076124925, 2.5225276399422185, -2.9188169500932153], 'potted_plant': [0.37100254429535223, 0.08157594453454071, -1.9378321557604188], 'kite': [2.271641266995752, 2.6407838119898845, -3.0858863561287904]}
+        if self.rescue_set is False:
+            self.rescue_set = True
+            charList = list(order_string.data)
+            p = np.zeros((3,2))
+            j=0
+            for i in charList:
+                if i == "0":
+                    p[j] = (self.obj_pos["fire_hydrant"])[0:2]
+                elif i == "1":
+                    p[j] = (self.obj_pos["potted_plant"])[0:2]
+                elif i == "2":
+                    p[j] = (self.obj_pos["car"])[0:2]
+                elif i == "3":
+                    p[j] = (self.obj_pos["kite"])[0:2]
+                j = j + 1    
+            Order = self.tsp_path(p[0],p[1],p[2],order_string)
+            for i in Order:
+                if i == "0":
+                    self.obj_order.append("fire_hydrant")
+                elif i == "1":
+                    self.obj_order.append("potted_plant")
+                elif i == "2":
+                    self.obj_order.append("car")
+                elif i == "3":
+                    self.obj_order.append("kite")
+            print(self.obj_order)
 
     ########## STATE MACHINE ACTIONS ##########
 
     ########## Code starts here ##########
     # Feel free to change the code here. You may or may not find these functions
     # useful. There is no single "correct implementation".
+
+    def tsp_path(self,p1,p2,p3,order_string):
+        #given positions of objects  to rescue and start point
+        dist = np.zeros(6)
+        paths = []
+        s = home[0:2]
+        #Calculate all distances between nodes - use manhattan distance
+        dist[0] = np.abs(s[0]-p1[0]) + np.abs(s[1]-p1[1])
+        dist[1] = np.abs(s[0]-p2[0]) + np.abs(s[1]-p2[1])
+        dist[2] = np.abs(s[0]-p3[0]) + np.abs(s[1]-p3[1])
+        dist[3] = np.abs(p1[0]-p2[0]) + np.abs(p1[1]-p2[1])
+        dist[4] = np.abs(p1[0]-p3[0]) + np.abs(p1[1]-p3[1])
+        dist[5] = np.abs(p3[0]-p2[0]) + np.abs(p3[1]-p2[1])
+        
+        #Possible paths
+        if order_string.data == "012":
+            paths = ["012","021","102"]
+        elif order_string.data == "123":
+            paths = ["123","132","213"]    
+        elif order_string.data == "013":
+            paths = ["013","031","103"]
+        elif order_string.data == "023":
+            paths = ["023","032","203"]
+        length = np.zeros(3)
+        #Calculate all possible path-lengths
+        length[0] = dist[0] + dist[3] + dist[5] + dist[2]
+        length[1] = dist[0] + dist[4] + dist[5] + dist[1]
+        length[2] = dist[1] + dist[3] + dist[4] + dist[2]
+        
+        return paths[np.argmin(length)]
 
     def go_to_pose(self):
         """ sends the current desired pose to the pose controller """
@@ -298,8 +353,8 @@ class Supervisor:
             if self.mode == Mode.NAVIGATE and self.obj_pos[obj] is None:
                 self.save_obj_pos(obj)
             # if we are rescuing and have not rescued this object -> stop at the object for rescue
-            elif self.mode == Mode.RESCUE_NAVIGATE and self.obj_rescue[obj] is False:
-                x=0
+            #elif self.mode == Mode.RESCUE_NAVIGATE and self.obj_rescue[obj] is False:
+            #    x=0
                 #self.stop_at_obj(obj)
                 #self.obj_rescue[obj] = True
 
@@ -308,7 +363,7 @@ class Supervisor:
         print("Updated object positions: ", self.obj_pos)
     
     def stop_at_obj(self, obj):
-        self.stop_start = rospy.get_rostime()
+        self.stop_sign_start = rospy.get_rostime()
         self.mode = Mode.STOP
         print("rescuing: ", obj)
 
@@ -384,8 +439,8 @@ class Supervisor:
 
         if self.mode == Mode.IDLE:
             # Set the next goal point
-            print("Waypoint no = ",self.counter)
-            print("No of waypoints = ",np.shape(waypoints)[0])
+            #print("Waypoint no = ",self.counter)
+            #print("No of waypoints = ",np.shape(waypoints)[0])
             if self.counter < np.shape(waypoints)[0]:
                 self.transformquat2euler(waypoints[self.counter,:])
                 #Call nav_to_pose function
@@ -397,8 +452,8 @@ class Supervisor:
             #print("Error is position is", np.sqrt((self.x_g-self.x)**2+(self.y_g-self.y)**2))
             #print("Error is orientation is", self.theta_g-self.theta)
             if self.close_to(self.x_g, self.y_g, self.theta_g):
-                print("Goal is ",self.x_g, self.y_g, self.theta_g)
-                print("Current position is ",self.x,self.y,self.theta)
+                #print("Goal is ",self.x_g, self.y_g, self.theta_g)
+                #print("Current position is ",self.x,self.y,self.theta)
                 self.mode = Mode.IDLE
                 self.counter = self.counter + 1
             else:
@@ -414,7 +469,8 @@ class Supervisor:
                     self.get_next_obj()
                     self.mode = Mode.RESCUE_NAVIGATE
                 else:
-                    self.mode = Mode.IDLE
+                    self.transformquat2euler(home)
+                    self.mode = Mode.NAVIGATE
 
         elif self.mode == Mode.RESCUE_NAVIGATE:
             if self.close_to(self.x_g, self.y_g, self.theta_g):
@@ -430,7 +486,8 @@ class Supervisor:
         elif self.mode == Mode.STOP:
             if self.has_stopped():
                 self.rescue_counter += 1
-                self.obj_rescue[self.obj_order[self.rescue_counter]] = True
+                if self.rescue_counter < 3:
+                    self.obj_rescue[self.obj_order[self.rescue_counter]] = True
                 self.mode = Mode.RESCUE
             else:
                 print("Rescuing...")

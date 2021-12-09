@@ -197,7 +197,7 @@ class Navigator:
             
             #Dilation with probabilities 
             holder = np.array(self.map_probs).reshape(self.map_width,-1)
-            thresh = 0.1 
+            thresh = 0.5 #0.1
             G = np.zeros((holder.shape[0], holder.shape[1]))
             dilation_spacing = 3
 
@@ -205,12 +205,12 @@ class Navigator:
             column_pad = int(np.floor(dilation_spacing / 2))
             holder_zero_pad = np.zeros((holder.shape[0]+dilation_spacing-1, holder.shape[1]+dilation_spacing-1))
             holder_zero_pad[row_pad:row_pad+holder.shape[0], column_pad:column_pad+holder.shape[1]] = holder
-
+            
             for j in range(holder.shape[0]):
                 for k in range(holder.shape[1]):
                     #G[j][k] = (np.sum(holder_zero_pad[j:j+dilation_spacing, k:k+dilation_spacing].flatten())/dilation_spacing**2)
                     sub_matrix = holder_zero_pad[j:j+dilation_spacing, k:k+dilation_spacing]
-                    if(sub_matrix.max()>thresh):
+                    if(sub_matrix.max()/100>thresh):
                         G[j][k] = sub_matrix.max()
             
             self.occupancy.probs = tuple(G.flatten())
